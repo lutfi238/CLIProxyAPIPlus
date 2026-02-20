@@ -14,10 +14,15 @@ REM Optional: override port or config path here
 set "CONFIG=%ROOT%config.yaml"
 
 REM Start server
-echo Starting CLIProxyAPIPlus...
-go run cmd\server\main.go -config "%CONFIG%"
+if not exist CLIProxyAPI.exe (
+    echo Membangun binary CLIProxyAPIPlus... proses ini hanya dilakukan sekali.
+    go build -o CLIProxyAPI.exe cmd\server\main.go
+)
 
-REM If you prefer running built binary, comment out the line above and use:
-REM .\CLIProxyAPI.exe -config "%CONFIG%"
+echo Starting CLIProxyAPIPlus...
+.\CLIProxyAPI.exe -config "%CONFIG%"
+
+REM If you want to re-compile after making code changes, delete CLIProxyAPI.exe first
+REM or run: go build -o CLIProxyAPI.exe cmd\server\main.go
 
 endlocal
