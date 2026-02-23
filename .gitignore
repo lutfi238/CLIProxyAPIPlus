@@ -48,6 +48,7 @@ GEMINI.md
 _bmad/*
 _bmad-output/*
 .mcp/cache/
+.worktrees/
 
 # macOS
 .DS_Store
