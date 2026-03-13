@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -632,7 +633,18 @@ func normalizeGitHubCopilotChatTools(body []byte) []byte {
 				if tool.Get("type").String() != "function" {
 					continue
 				}
-				filtered, _ = sjson.SetRaw(filtered, "-1", tool.Raw)
+				toolJSON := tool.Raw
+				// Sanitize tool parameter schemas to fix arrays missing "items" etc.
+				if params := tool.Get("function.parameters"); params.Exists() {
+					if fixed := sanitizeToolParametersSchema(params.Raw); fixed != params.Raw {
+						toolJSON, _ = sjson.SetRaw(toolJSON, "function.parameters", fixed)
+					}
+				} else if params = tool.Get("parameters"); params.Exists() {
+					if fixed := sanitizeToolParametersSchema(params.Raw); fixed != params.Raw {
+						toolJSON, _ = sjson.SetRaw(toolJSON, "parameters", fixed)
+					}
+				}
+				filtered, _ = sjson.SetRaw(filtered, "-1", toolJSON)
 			}
 		}
 		body, _ = sjson.SetRawBytes(body, "tools", []byte(filtered))
@@ -650,6 +662,91 @@ func normalizeGitHubCopilotChatTools(body []byte) []byte {
 	}
 	body, _ = sjson.SetBytes(body, "tool_choice", "auto")
 	return body
+}
+
+// sanitizeToolParametersSchema recursively walks a JSON Schema and fixes
+// common issues that cause OpenAI/Copilot API rejections:
+// - Adds "items": {} to any "type": "array" node missing "items"
+// - Adds "properties": {} to any "type": "object" node missing "properties"
+func sanitizeToolParametersSchema(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "null" || !gjson.Valid(raw) {
+		return raw
+	}
+	var schema interface{}
+	if err := json.Unmarshal([]byte(raw), &schema); err != nil {
+		return raw
+	}
+	if fixSchemaNode(schema) {
+		if out, err := json.Marshal(schema); err == nil {
+			return string(out)
+		}
+	}
+	return raw
+}
+
+// fixSchemaNode recursively fixes a JSON Schema node. Returns true if any change was made.
+func fixSchemaNode(node interface{}) bool {
+	obj, ok := node.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	changed := false
+
+	if t, ok := obj["type"]; ok {
+		switch t {
+		case "array":
+			if _, hasItems := obj["items"]; !hasItems {
+				obj["items"] = map[string]interface{}{}
+				changed = true
+			}
+		case "object":
+			if _, hasProps := obj["properties"]; !hasProps {
+				obj["properties"] = map[string]interface{}{}
+				changed = true
+			}
+		}
+	}
+
+	// Recurse into "items"
+	if items, ok := obj["items"]; ok {
+		if fixSchemaNode(items) {
+			changed = true
+		}
+	}
+
+	// Recurse into "properties"
+	if props, ok := obj["properties"]; ok {
+		if propsMap, ok := props.(map[string]interface{}); ok {
+			for _, v := range propsMap {
+				if fixSchemaNode(v) {
+					changed = true
+				}
+			}
+		}
+	}
+
+	// Recurse into "additionalProperties" if it's a schema object
+	if ap, ok := obj["additionalProperties"]; ok {
+		if fixSchemaNode(ap) {
+			changed = true
+		}
+	}
+
+	// Recurse into "anyOf", "oneOf", "allOf" arrays
+	for _, key := range []string{"anyOf", "oneOf", "allOf"} {
+		if arr, ok := obj[key]; ok {
+			if arrSlice, ok := arr.([]interface{}); ok {
+				for _, item := range arrSlice {
+					if fixSchemaNode(item) {
+						changed = true
+					}
+				}
+			}
+		}
+	}
+
+	return changed
 }
 
 func normalizeGitHubCopilotResponsesInput(body []byte) []byte {
@@ -862,12 +959,16 @@ func normalizeGitHubCopilotResponsesTools(body []byte) []byte {
 				} else if desc = tool.Get("function.description").String(); desc != "" {
 					normalized, _ = sjson.Set(normalized, "description", desc)
 				}
+				var paramsRaw string
 				if params := tool.Get("parameters"); params.Exists() {
-					normalized, _ = sjson.SetRaw(normalized, "parameters", params.Raw)
+					paramsRaw = params.Raw
 				} else if params = tool.Get("function.parameters"); params.Exists() {
-					normalized, _ = sjson.SetRaw(normalized, "parameters", params.Raw)
+					paramsRaw = params.Raw
 				} else if params = tool.Get("input_schema"); params.Exists() {
-					normalized, _ = sjson.SetRaw(normalized, "parameters", params.Raw)
+					paramsRaw = params.Raw
+				}
+				if paramsRaw != "" {
+					normalized, _ = sjson.SetRaw(normalized, "parameters", sanitizeToolParametersSchema(paramsRaw))
 				}
 				filtered, _ = sjson.SetRaw(filtered, "-1", normalized)
 			}

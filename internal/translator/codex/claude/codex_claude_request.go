@@ -6,6 +6,7 @@
 package claude
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -406,21 +407,80 @@ func buildReverseMapFromClaudeOriginalToShort(original []byte) map[string]string
 	return m
 }
 
-// normalizeToolParameters ensures object schemas contain at least an empty properties map.
+// normalizeToolParameters ensures tool parameter schemas are valid for the OpenAI API.
+// It recursively walks the schema tree and fixes:
+// - Object types missing "properties" (adds empty {})
+// - Array types missing "items" (adds empty {})
+// - Missing top-level "type" (defaults to "object")
 func normalizeToolParameters(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || raw == "null" || !gjson.Valid(raw) {
 		return `{"type":"object","properties":{}}`
 	}
-	schema := raw
-	result := gjson.Parse(raw)
-	schemaType := result.Get("type").String()
+	var schema interface{}
+	if err := json.Unmarshal([]byte(raw), &schema); err != nil {
+		return `{"type":"object","properties":{}}`
+	}
+	fixToolSchemaNode(schema)
+	if out, err := json.Marshal(schema); err == nil {
+		return string(out)
+	}
+	return raw
+}
+
+// fixToolSchemaNode recursively fixes a JSON Schema node in-place.
+func fixToolSchemaNode(node interface{}) {
+	obj, ok := node.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	// Default missing type to object
+	schemaType, _ := obj["type"].(string)
 	if schemaType == "" {
-		schema, _ = sjson.Set(schema, "type", "object")
+		obj["type"] = "object"
 		schemaType = "object"
 	}
-	if schemaType == "object" && !result.Get("properties").Exists() {
-		schema, _ = sjson.SetRaw(schema, "properties", `{}`)
+
+	switch schemaType {
+	case "object":
+		if _, hasProps := obj["properties"]; !hasProps {
+			obj["properties"] = map[string]interface{}{}
+		}
+	case "array":
+		if _, hasItems := obj["items"]; !hasItems {
+			obj["items"] = map[string]interface{}{}
+		}
 	}
-	return schema
+
+	// Recurse into items
+	if items, ok := obj["items"]; ok {
+		fixToolSchemaNode(items)
+	}
+
+	// Recurse into properties
+	if props, ok := obj["properties"]; ok {
+		if propsMap, ok := props.(map[string]interface{}); ok {
+			for _, v := range propsMap {
+				fixToolSchemaNode(v)
+			}
+		}
+	}
+
+	// Recurse into additionalProperties if it's a schema
+	if ap, ok := obj["additionalProperties"]; ok {
+		fixToolSchemaNode(ap)
+	}
+
+	// Recurse into anyOf, oneOf, allOf
+	for _, key := range []string{"anyOf", "oneOf", "allOf"} {
+		if arr, ok := obj[key]; ok {
+			if arrSlice, ok := arr.([]interface{}); ok {
+				for _, item := range arrSlice {
+					fixToolSchemaNode(item)
+				}
+			}
+		}
+	}
 }
+
