@@ -121,6 +121,9 @@ func tryRefreshModels(ctx context.Context, label string) {
 		return
 	}
 
+	// Merge embedded-only models into fetched data so local additions survive.
+	mergeEmbeddedModels(parsed)
+
 	// Detect changes before updating store.
 	changed := detectChangedProviders(oldData, parsed)
 
@@ -309,6 +312,68 @@ func loadModelsFromBytes(data []byte, source string) error {
 	modelsCatalogStore.data = &parsed
 	modelsCatalogStore.mu.Unlock()
 	return nil
+}
+
+// mergeEmbeddedModels supplements the fetched model catalog with any models
+// defined in the compiled-in embedded models.json that are not present in the
+// fetched data. This allows locally added models to survive remote overwrites.
+func mergeEmbeddedModels(fetched *staticModelsJSON) {
+	if fetched == nil || len(embeddedModelsJSON) == 0 {
+		return
+	}
+	var embedded staticModelsJSON
+	if err := json.Unmarshal(embeddedModelsJSON, &embedded); err != nil {
+		log.Warnf("mergeEmbeddedModels: cannot parse embedded models: %v", err)
+		return
+	}
+
+	type pair struct {
+		dst *[]*ModelInfo
+		src []*ModelInfo
+	}
+	pairs := []pair{
+		{&fetched.Claude, embedded.Claude},
+		{&fetched.Gemini, embedded.Gemini},
+		{&fetched.Vertex, embedded.Vertex},
+		{&fetched.GeminiCLI, embedded.GeminiCLI},
+		{&fetched.AIStudio, embedded.AIStudio},
+		{&fetched.CodexFree, embedded.CodexFree},
+		{&fetched.CodexTeam, embedded.CodexTeam},
+		{&fetched.CodexPlus, embedded.CodexPlus},
+		{&fetched.CodexPro, embedded.CodexPro},
+		{&fetched.Qwen, embedded.Qwen},
+		{&fetched.IFlow, embedded.IFlow},
+		{&fetched.Kimi, embedded.Kimi},
+		{&fetched.Antigravity, embedded.Antigravity},
+	}
+	for _, p := range pairs {
+		mergeModelSection(p.dst, p.src)
+	}
+}
+
+// mergeModelSection appends models from src that are missing in dst (by ID).
+func mergeModelSection(dst *[]*ModelInfo, src []*ModelInfo) {
+	if dst == nil || len(src) == 0 {
+		return
+	}
+	existing := make(map[string]struct{}, len(*dst))
+	for _, m := range *dst {
+		if m != nil {
+			existing[strings.ToLower(strings.TrimSpace(m.ID))] = struct{}{}
+		}
+	}
+	for _, m := range src {
+		if m == nil {
+			continue
+		}
+		id := strings.ToLower(strings.TrimSpace(m.ID))
+		if _, ok := existing[id]; ok {
+			continue
+		}
+		clone := cloneModelInfo(m)
+		*dst = append(*dst, clone)
+		existing[id] = struct{}{}
+	}
 }
 
 func getModels() *staticModelsJSON {

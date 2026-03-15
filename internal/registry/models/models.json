@@ -2345,6 +2345,46 @@
       }
     },
     {
+      "id": "glm-4.7",
+      "object": "model",
+      "created": 1759190400,
+      "owned_by": "iflow",
+      "type": "iflow",
+      "display_name": "GLM-4.7",
+      "description": "Zhipu GLM 4.7 general model",
+      "thinking": {
+        "levels": [
+          "none",
+          "auto",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    {
+      "id": "glm-5",
+      "object": "model",
+      "created": 1759190400,
+      "owned_by": "iflow",
+      "type": "iflow",
+      "display_name": "GLM-5",
+      "description": "Zhipu GLM 5 general model",
+      "thinking": {
+        "levels": [
+          "none",
+          "auto",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    {
       "id": "kimi-k2",
       "object": "model",
       "created": 1752192000,
@@ -2352,6 +2392,54 @@
       "type": "iflow",
       "display_name": "Kimi-K2",
       "description": "Moonshot Kimi K2 general model"
+    },
+    {
+      "id": "kimi-k2-thinking",
+      "object": "model",
+      "created": 1762387200,
+      "owned_by": "iflow",
+      "type": "iflow",
+      "display_name": "Kimi-K2-Thinking",
+      "description": "Moonshot Kimi K2 Thinking model",
+      "thinking": {
+        "min": 1024,
+        "max": 32000,
+        "zero_allowed": true,
+        "dynamic_allowed": true
+      }
+    },
+    {
+      "id": "minimax-m2.5",
+      "object": "model",
+      "created": 1762387200,
+      "owned_by": "iflow",
+      "type": "iflow",
+      "display_name": "MiniMax-M2.5",
+      "description": "MiniMax M2.5 general model"
+    },
+    {
+      "id": "kimi-k2.5",
+      "object": "model",
+      "created": 1769472000,
+      "owned_by": "iflow",
+      "type": "iflow",
+      "display_name": "Kimi-K2.5",
+      "description": "Moonshot Kimi K2.5 model",
+      "thinking": {
+        "min": 1024,
+        "max": 32000,
+        "zero_allowed": true,
+        "dynamic_allowed": true
+      }
+    },
+    {
+      "id": "kimi-k2-0905",
+      "object": "model",
+      "created": 1769472000,
+      "owned_by": "iflow",
+      "type": "iflow",
+      "display_name": "Kimi-K2-0905",
+      "description": "Moonshot Kimi K2 0905 model"
     },
     {
       "id": "deepseek-v3.2",
