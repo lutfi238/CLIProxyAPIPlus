@@ -457,7 +457,6 @@ func GetGitHubCopilotModels() []*ModelInfo {
 			Type:                "github-copilot",
 			DisplayName:         "GPT-5.4",
 			Description:         "OpenAI GPT-5.4 via GitHub Copilot",
-<<<<<<< HEAD
 			ContextLength:       1050000,
 			MaxCompletionTokens: 128000,
 			SupportedEndpoints:  []string{"/chat/completions", "/responses"},
@@ -475,12 +474,6 @@ func GetGitHubCopilotModels() []*ModelInfo {
 			MaxCompletionTokens: 128000,
 			SupportedEndpoints:  []string{"/responses"},
 			Thinking:            &ThinkingSupport{Levels: []string{"low", "medium", "high", "xhigh"}},
-=======
-			ContextLength:       200000,
-			MaxCompletionTokens: 32768,
-			SupportedEndpoints:  []string{"/responses"},
-			Thinking:            &ThinkingSupport{Levels: []string{"none", "low", "medium", "high", "xhigh"}},
->>>>>>> 7fa527193c0b1d62c78b2ff901c7f733b99272ac
 		},
 		{
 			ID:                  "claude-haiku-4.5",

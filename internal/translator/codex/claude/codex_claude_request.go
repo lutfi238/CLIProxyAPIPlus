@@ -423,7 +423,6 @@ func normalizeToolParameters(raw string) string {
 	if raw == "" || raw == "null" || !gjson.Valid(raw) {
 		return `{"type":"object","properties":{}}`
 	}
-<<<<<<< HEAD
 	var schema interface{}
 	if err := json.Unmarshal([]byte(raw), &schema); err != nil {
 		return `{"type":"object","properties":{}}`
@@ -489,18 +488,4 @@ func fixToolSchemaNode(node interface{}) {
 			}
 		}
 	}
-=======
-	result := gjson.Parse(raw)
-	schema := []byte(raw)
-	schemaType := result.Get("type").String()
-	if schemaType == "" {
-		schema, _ = sjson.SetBytes(schema, "type", "object")
-		schemaType = "object"
-	}
-	if schemaType == "object" && !result.Get("properties").Exists() {
-		schema, _ = sjson.SetRawBytes(schema, "properties", []byte(`{}`))
-	}
-	return string(schema)
->>>>>>> 7fa527193c0b1d62c78b2ff901c7f733b99272ac
 }
-
