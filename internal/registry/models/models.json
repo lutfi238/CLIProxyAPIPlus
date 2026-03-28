@@ -1386,6 +1386,9 @@
       "supported_parameters": [
         "tools"
       ],
+      "supported_endpoints": [
+        "/chat/completions"
+      ],
       "thinking": {
         "levels": [
           "low",
@@ -1637,6 +1640,9 @@
       "max_completion_tokens": 128000,
       "supported_parameters": [
         "tools"
+      ],
+      "supported_endpoints": [
+        "/chat/completions"
       ],
       "thinking": {
         "levels": [
@@ -1913,6 +1919,9 @@
       "supported_parameters": [
         "tools"
       ],
+      "supported_endpoints": [
+        "/chat/completions"
+      ],
       "thinking": {
         "levels": [
           "low",
@@ -2187,6 +2196,9 @@
       "max_completion_tokens": 128000,
       "supported_parameters": [
         "tools"
+      ],
+      "supported_endpoints": [
+        "/chat/completions"
       ],
       "thinking": {
         "levels": [
