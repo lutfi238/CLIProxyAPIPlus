@@ -22,6 +22,7 @@ type oaiToResponsesState struct {
 	ResponseID     string
 	Created        int64
 	Started        bool
+	Completed      bool
 	ReasoningID    string
 	ReasoningIndex int
 	// aggregation buffers for response.output
@@ -353,6 +354,39 @@ func ConvertOpenAIChatCompletionsResponseToOpenAIResponses(ctx context.Context, 
 			// finish_reason triggers finalization, including text done/content done/item done,
 			// reasoning done/part.done, function args done/item done, and completed
 			if fr := choice.Get("finish_reason"); fr.Exists() && fr.String() != "" {
+				// If no message items, no function calls, and no reasoning were ever emitted,
+				// inject a synthetic empty message so the extension doesn't show
+				// "Sorry, no response was returned" for empty model responses.
+				if len(st.MsgItemAdded) == 0 && len(st.FuncCallIDs) == 0 && st.ReasoningID == "" {
+					emptyIdx := 0
+					emptyItemID := fmt.Sprintf("msg_%s_%d", st.ResponseID, emptyIdx)
+					// output_item.added
+					oiaMsg := []byte(`{"type":"response.output_item.added","sequence_number":0,"output_index":0,"item":{"id":"","type":"message","status":"in_progress","content":[],"role":"assistant"}}`)
+					oiaMsg, _ = sjson.SetBytes(oiaMsg, "sequence_number", nextSeq())
+					oiaMsg, _ = sjson.SetBytes(oiaMsg, "output_index", emptyIdx)
+					oiaMsg, _ = sjson.SetBytes(oiaMsg, "item.id", emptyItemID)
+					out = append(out, emitRespEvent("response.output_item.added", oiaMsg))
+					// content_part.added
+					cpa := []byte(`{"type":"response.content_part.added","sequence_number":0,"item_id":"","output_index":0,"content_index":0,"part":{"type":"output_text","annotations":[],"logprobs":[],"text":""}}`)
+					cpa, _ = sjson.SetBytes(cpa, "sequence_number", nextSeq())
+					cpa, _ = sjson.SetBytes(cpa, "item_id", emptyItemID)
+					cpa, _ = sjson.SetBytes(cpa, "output_index", emptyIdx)
+					out = append(out, emitRespEvent("response.content_part.added", cpa))
+					// Emit a text delta with a single space so the extension actually
+					// reports content to VS Code (empty text is skipped by the extension).
+					delta := []byte(`{"type":"response.output_text.delta","sequence_number":0,"item_id":"","output_index":0,"content_index":0,"delta":" "}`)
+					delta, _ = sjson.SetBytes(delta, "sequence_number", nextSeq())
+					delta, _ = sjson.SetBytes(delta, "item_id", emptyItemID)
+					delta, _ = sjson.SetBytes(delta, "output_index", emptyIdx)
+					out = append(out, emitRespEvent("response.output_text.delta", delta))
+					// Mark as added so the done events below will fire
+					st.MsgItemAdded[emptyIdx] = true
+					st.MsgContentAdded[emptyIdx] = true
+					buf := &strings.Builder{}
+					buf.WriteString(" ")
+					st.MsgTextBuf[emptyIdx] = buf
+				}
+
 				// Emit message done events for all indices that started a message
 				if len(st.MsgItemAdded) > 0 {
 					// sort indices for deterministic order
@@ -593,6 +627,7 @@ func ConvertOpenAIChatCompletionsResponseToOpenAIResponses(ctx context.Context, 
 					completed, _ = sjson.SetBytes(completed, "response.usage.total_tokens", total)
 				}
 				out = append(out, emitRespEvent("response.completed", completed))
+				st.Completed = true
 			}
 
 			return true
@@ -778,4 +813,22 @@ func ConvertOpenAIChatCompletionsResponseToOpenAIResponsesNonStream(_ context.Co
 	}
 
 	return resp
+}
+
+// FlushPendingState sends a synthetic finish_reason:stop chunk through the converter
+// to emit any pending done/completed events when the stream ends without one.
+// This handles the case where the upstream closes the stream without sending a
+// finish_reason chunk, leaving the converter in an incomplete state (delta events
+// were emitted but done/completed were not).
+func FlushPendingState(ctx context.Context, modelName string, requestRawJSON []byte, chatJSON []byte, param *any) [][]byte {
+	if param == nil || *param == nil {
+		return nil
+	}
+	st, ok := (*param).(*oaiToResponsesState)
+	if !ok || !st.Started || st.Completed {
+		return nil
+	}
+	// Send a synthetic finish_reason:stop chunk to trigger finalization
+	syntheticChunk := []byte(`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`)
+	return ConvertOpenAIChatCompletionsResponseToOpenAIResponses(ctx, modelName, requestRawJSON, chatJSON, syntheticChunk, param)
 }

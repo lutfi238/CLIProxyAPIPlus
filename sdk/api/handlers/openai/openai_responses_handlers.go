@@ -13,6 +13,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
 	. "github.com/router-for-me/CLIProxyAPI/v6/internal/constant"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/interfaces"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/registry"
@@ -88,7 +89,9 @@ func (h *OpenAIResponsesAPIHandler) Responses(c *gin.Context) {
 	stream := streamResult.Type == gjson.True
 
 	modelName := gjson.GetBytes(rawJSON, "model").String()
+	log.Debugf("[responses-handler] model=%s stream=%v", modelName, stream)
 	if overrideEndpoint, ok := resolveEndpointOverride(modelName, openAIResponsesEndpoint); ok && overrideEndpoint == openAIChatEndpoint {
+		log.Debugf("[responses-handler] overriding /responses -> /chat/completions for model=%s", modelName)
 		chatJSON := responsesconverter.ConvertOpenAIResponsesRequestToOpenAIChatCompletions(modelName, rawJSON, stream)
 		stream = gjson.GetBytes(chatJSON, "stream").Bool()
 		if stream {
@@ -98,6 +101,7 @@ func (h *OpenAIResponsesAPIHandler) Responses(c *gin.Context) {
 		}
 		return
 	}
+	log.Debugf("[responses-handler] no override, passing /responses directly for model=%s", modelName)
 
 	if stream {
 		h.handleStreamingResponse(c, rawJSON)
@@ -341,18 +345,21 @@ func (h *OpenAIResponsesAPIHandler) handleStreamingResponseViaChat(c *gin.Contex
 			writeChatAsResponsesChunk(c, cliCtx, modelName, originalResponsesJSON, chunk, &param)
 			flusher.Flush()
 
-			h.forwardChatAsResponsesStream(c, flusher, func(err error) { cliCancel(err) }, dataChan, errChan, cliCtx, modelName, originalResponsesJSON, &param)
+			h.forwardChatAsResponsesStream(c, flusher, func(err error) { cliCancel(err) }, dataChan, errChan, cliCtx, modelName, originalResponsesJSON, chatJSON, &param)
 			return
 		}
 	}
 }
 
 func writeChatAsResponsesChunk(c *gin.Context, ctx context.Context, modelName string, originalResponsesJSON, chunk []byte, param *any) {
+	log.Debugf("[responses-handler] chat chunk in: %s", string(chunk))
 	outputs := responsesconverter.ConvertOpenAIChatCompletionsResponseToOpenAIResponses(ctx, modelName, originalResponsesJSON, originalResponsesJSON, chunk, param)
+	log.Debugf("[responses-handler] converted to %d response events", len(outputs))
 	for _, out := range outputs {
 		if len(out) == 0 {
 			continue
 		}
+		log.Debugf("[responses-handler] sending event: %s", string(out[:min(len(out), 200)]))
 		if bytes.HasPrefix(out, []byte("event:")) {
 			_, _ = c.Writer.Write([]byte("\n"))
 		}
@@ -361,14 +368,24 @@ func writeChatAsResponsesChunk(c *gin.Context, ctx context.Context, modelName st
 	}
 }
 
-func (h *OpenAIResponsesAPIHandler) forwardChatAsResponsesStream(c *gin.Context, flusher http.Flusher, cancel func(error), data <-chan []byte, errs <-chan *interfaces.ErrorMessage, ctx context.Context, modelName string, originalResponsesJSON []byte, param *any) {
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func (h *OpenAIResponsesAPIHandler) forwardChatAsResponsesStream(c *gin.Context, flusher http.Flusher, cancel func(error), data <-chan []byte, errs <-chan *interfaces.ErrorMessage, ctx context.Context, modelName string, originalResponsesJSON []byte, chatJSON []byte, param *any) {
 	h.ForwardStream(c, flusher, cancel, data, errs, handlers.StreamForwardOptions{
 		WriteChunk: func(chunk []byte) {
+			log.Debugf("[responses-handler] chat chunk (subsequent) in: %s", string(chunk))
 			outputs := responsesconverter.ConvertOpenAIChatCompletionsResponseToOpenAIResponses(ctx, modelName, originalResponsesJSON, originalResponsesJSON, chunk, param)
+			log.Debugf("[responses-handler] converted (subsequent) to %d response events", len(outputs))
 			for _, out := range outputs {
 				if len(out) == 0 {
 					continue
 				}
+				log.Debugf("[responses-handler] sending event (subsequent): %s", string(out[:min(len(out), 200)]))
 				if bytes.HasPrefix(out, []byte("event:")) {
 					_, _ = c.Writer.Write([]byte("\n"))
 				}
@@ -392,6 +409,24 @@ func (h *OpenAIResponsesAPIHandler) forwardChatAsResponsesStream(c *gin.Context,
 			_, _ = fmt.Fprintf(c.Writer, "\nevent: error\ndata: %s\n\n", string(body))
 		},
 		WriteDone: func() {
+			// Flush any pending converter state - this handles the case where
+			// the stream ends without a finish_reason chunk, ensuring that
+			// done/completed events are emitted for the extension to process.
+			flushOutputs := responsesconverter.FlushPendingState(ctx, modelName, originalResponsesJSON, chatJSON, param)
+			if len(flushOutputs) > 0 {
+				log.Debugf("[responses-handler] WriteDone: flushing %d pending events", len(flushOutputs))
+				for _, out := range flushOutputs {
+					if len(out) == 0 {
+						continue
+					}
+					log.Debugf("[responses-handler] flushing event: %s", string(out[:min(len(out), 200)]))
+					if bytes.HasPrefix(out, []byte("event:")) {
+						_, _ = c.Writer.Write([]byte("\n"))
+					}
+					_, _ = c.Writer.Write(out)
+					_, _ = c.Writer.Write([]byte("\n"))
+				}
+			}
 			_, _ = c.Writer.Write([]byte("\n"))
 		},
 	})

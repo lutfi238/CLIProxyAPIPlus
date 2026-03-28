@@ -13,6 +13,12 @@ func resolveEndpointOverride(modelName, requestedEndpoint string) (string, bool)
 	}
 	info := registry.GetGlobalRegistry().GetModelInfo(modelName, "")
 	if info == nil || len(info.SupportedEndpoints) == 0 {
+		// When a model has no declared endpoints, default to /chat/completions
+		// for /responses requests. Most models don't support the newer Responses
+		// API, so converting to chat completions is a safe default.
+		if requestedEndpoint == openAIResponsesEndpoint {
+			return openAIChatEndpoint, true
+		}
 		return "", false
 	}
 	if endpointListContains(info.SupportedEndpoints, requestedEndpoint) {
