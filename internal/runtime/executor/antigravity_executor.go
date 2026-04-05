@@ -36,17 +36,18 @@ import (
 )
 
 const (
-	antigravityBaseURLDaily        = "https://daily-cloudcode-pa.googleapis.com"
-	antigravitySandboxBaseURLDaily = "https://daily-cloudcode-pa.sandbox.googleapis.com"
-	antigravityBaseURLProd         = "https://cloudcode-pa.googleapis.com"
-	antigravityCountTokensPath     = "/v1internal:countTokens"
-	antigravityStreamPath          = "/v1internal:streamGenerateContent"
-	antigravityGeneratePath        = "/v1internal:generateContent"
-	antigravityClientID            = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
-	antigravityClientSecret        = "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"
-	defaultAntigravityAgent        = "antigravity/1.19.6 darwin/arm64"
-	antigravityAuthType            = "antigravity"
-	refreshSkew                    = 3000 * time.Second
+	antigravityBaseURLDaily          = "https://daily-cloudcode-pa.googleapis.com"
+	antigravitySandboxBaseURLDaily   = "https://daily-cloudcode-pa.sandbox.googleapis.com"
+	antigravityBaseURLProd           = "https://cloudcode-pa.googleapis.com"
+	antigravityCountTokensPath       = "/v1internal:countTokens"
+	antigravityStreamPath            = "/v1internal:streamGenerateContent"
+	antigravityGeneratePath          = "/v1internal:generateContent"
+	antigravityClaudeMaxOutputTokens = 32000
+	antigravityClientID              = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+	antigravityClientSecret          = "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"
+	defaultAntigravityAgent          = "antigravity/1.19.6 darwin/arm64"
+	antigravityAuthType              = "antigravity"
+	refreshSkew                      = 3000 * time.Second
 	// systemInstruction              = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**"
 )
 
@@ -1288,8 +1289,25 @@ func (e *AntigravityExecutor) buildRequest(ctx context.Context, auth *cliproxyau
 	// }
 
 	if strings.Contains(modelName, "claude") {
-		updated, _ := sjson.SetBytes([]byte(payloadStr), "request.toolConfig.functionCallingConfig.mode", "VALIDATED")
-		payloadStr = string(updated)
+		const modePath = "request.toolConfig.functionCallingConfig.mode"
+		hasTools := gjson.Get(payloadStr, "request.tools.#").Int() > 0
+
+		if hasTools {
+			if !gjson.Get(payloadStr, modePath).Exists() {
+				updated, _ := sjson.SetBytes([]byte(payloadStr), modePath, "VALIDATED")
+				payloadStr = string(updated)
+			}
+		} else {
+			payloadStr, _ = sjson.Delete(payloadStr, "request.toolConfig.functionCallingConfig")
+			if toolConfig := gjson.Get(payloadStr, "request.toolConfig"); toolConfig.Exists() && toolConfig.IsObject() && len(toolConfig.Map()) == 0 {
+				payloadStr, _ = sjson.Delete(payloadStr, "request.toolConfig")
+			}
+		}
+
+		// Some Antigravity Claude backends reject extremely large maxOutputTokens values.
+		if maxOut := gjson.Get(payloadStr, "request.generationConfig.maxOutputTokens"); maxOut.Exists() && maxOut.Int() > antigravityClaudeMaxOutputTokens {
+			payloadStr, _ = sjson.Set(payloadStr, "request.generationConfig.maxOutputTokens", antigravityClaudeMaxOutputTokens)
+		}
 	} else {
 		payloadStr, _ = sjson.Delete(payloadStr, "request.generationConfig.maxOutputTokens")
 	}

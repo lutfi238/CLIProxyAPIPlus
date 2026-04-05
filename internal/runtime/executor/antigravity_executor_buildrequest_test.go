@@ -35,12 +35,120 @@ func TestAntigravityBuildRequest_SanitizesAntigravityToolSchema(t *testing.T) {
 	assertSchemaSanitizedAndPropertyPreserved(t, params)
 }
 
+func TestAntigravityBuildRequest_ClaudeWithoutTools_DoesNotForceFunctionCallingMode(t *testing.T) {
+	body := buildRequestBody(t, "claude-opus-4-6", []byte(`{
+		"request": {
+			"contents": [
+				{
+					"role": "user",
+					"parts": [{"text": "hello"}]
+				}
+			]
+		}
+	}`))
+
+	if mode, ok := getFunctionCallingMode(body); ok {
+		t.Fatalf("functionCallingConfig.mode should be absent when no tools are provided, got %q", mode)
+	}
+
+	request, ok := body["request"].(map[string]any)
+	if !ok {
+		t.Fatalf("request missing or invalid type")
+	}
+	if _, exists := request["toolConfig"]; exists {
+		t.Fatalf("toolConfig should be absent when no tools are provided")
+	}
+}
+
+func TestAntigravityBuildRequest_ClaudeWithTools_DefaultsToValidatedMode(t *testing.T) {
+	body := buildRequestBody(t, "claude-opus-4-6", []byte(`{
+		"request": {
+			"tools": [
+				{
+					"function_declarations": [
+						{
+							"name": "tool_1",
+							"parameters": {
+								"type": "object",
+								"properties": {"arg": {"type": "string"}}
+							}
+						}
+					]
+				}
+			]
+		}
+	}`))
+
+	mode, ok := getFunctionCallingMode(body)
+	if !ok {
+		t.Fatalf("functionCallingConfig.mode should exist when tools are provided")
+	}
+	if mode != "VALIDATED" {
+		t.Fatalf("expected functionCallingConfig.mode to default to VALIDATED, got %q", mode)
+	}
+}
+
+func TestAntigravityBuildRequest_ClaudePreservesExplicitFunctionCallingMode(t *testing.T) {
+	body := buildRequestBody(t, "claude-opus-4-6", []byte(`{
+		"request": {
+			"tools": [
+				{
+					"function_declarations": [
+						{
+							"name": "tool_1",
+							"parameters": {
+								"type": "object",
+								"properties": {"arg": {"type": "string"}}
+							}
+						}
+					]
+				}
+			],
+			"toolConfig": {
+				"functionCallingConfig": {
+					"mode": "NONE"
+				}
+			}
+		}
+	}`))
+
+	mode, ok := getFunctionCallingMode(body)
+	if !ok {
+		t.Fatalf("functionCallingConfig.mode should exist")
+	}
+	if mode != "NONE" {
+		t.Fatalf("expected explicit functionCallingConfig.mode to be preserved as NONE, got %q", mode)
+	}
+}
+
+func TestAntigravityBuildRequest_ClaudeCapsMaxOutputTokens(t *testing.T) {
+	body := buildRequestBody(t, "claude-opus-4-6-thinking", []byte(`{
+		"request": {
+			"contents": [
+				{
+					"role": "user",
+					"parts": [{"text": "hello"}]
+				}
+			],
+			"generationConfig": {
+				"maxOutputTokens": 128000
+			}
+		}
+	}`))
+
+	maxTokens, ok := getMaxOutputTokens(body)
+	if !ok {
+		t.Fatalf("request.generationConfig.maxOutputTokens should exist")
+	}
+	if maxTokens != antigravityClaudeMaxOutputTokens {
+		t.Fatalf("expected request.generationConfig.maxOutputTokens to be capped at %d, got %d", antigravityClaudeMaxOutputTokens, maxTokens)
+	}
+}
+
 func buildRequestBodyFromPayload(t *testing.T, modelName string) map[string]any {
 	t.Helper()
 
-	executor := &AntigravityExecutor{}
-	auth := &cliproxyauth.Auth{}
-	payload := []byte(`{
+	return buildRequestBody(t, modelName, []byte(`{
 		"request": {
 			"tools": [
 				{
@@ -75,7 +183,14 @@ func buildRequestBodyFromPayload(t *testing.T, modelName string) map[string]any 
 				}
 			]
 		}
-	}`)
+	}`))
+}
+
+func buildRequestBody(t *testing.T, modelName string, payload []byte) map[string]any {
+	t.Helper()
+
+	executor := &AntigravityExecutor{}
+	auth := &cliproxyauth.Auth{}
 
 	req, err := executor.buildRequest(context.Background(), auth, "token", modelName, payload, false, "", "https://example.com")
 	if err != nil {
@@ -92,6 +207,64 @@ func buildRequestBodyFromPayload(t *testing.T, modelName string) map[string]any 
 		t.Fatalf("unmarshal request body error: %v, body=%s", err, string(raw))
 	}
 	return body
+}
+
+func getFunctionCallingMode(body map[string]any) (string, bool) {
+	request, ok := body["request"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+
+	toolConfig, ok := request["toolConfig"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+
+	functionCallingConfig, ok := toolConfig["functionCallingConfig"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+
+	mode, ok := functionCallingConfig["mode"].(string)
+	if !ok {
+		return "", false
+	}
+
+	return mode, true
+}
+
+func getMaxOutputTokens(body map[string]any) (int64, bool) {
+	request, ok := body["request"].(map[string]any)
+	if !ok {
+		return 0, false
+	}
+
+	generationConfig, ok := request["generationConfig"].(map[string]any)
+	if !ok {
+		return 0, false
+	}
+
+	value, exists := generationConfig["maxOutputTokens"]
+	if !exists {
+		return 0, false
+	}
+
+	switch typed := value.(type) {
+	case float64:
+		return int64(typed), true
+	case int:
+		return int64(typed), true
+	case int64:
+		return typed, true
+	case json.Number:
+		i, err := typed.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return i, true
+	default:
+		return 0, false
+	}
 }
 
 func extractFirstFunctionDeclaration(t *testing.T, body map[string]any) map[string]any {
