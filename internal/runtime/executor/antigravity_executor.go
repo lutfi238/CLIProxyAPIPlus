@@ -38,19 +38,19 @@ import (
 )
 
 const (
-	antigravityBaseURLDaily        = "https://daily-cloudcode-pa.googleapis.com"
-	antigravitySandboxBaseURLDaily = "https://daily-cloudcode-pa.sandbox.googleapis.com"
-	antigravityBaseURLProd         = "https://cloudcode-pa.googleapis.com"
-	antigravityCountTokensPath     = "/v1internal:countTokens"
-	antigravityStreamPath          = "/v1internal:streamGenerateContent"
-	antigravityGeneratePath        = "/v1internal:generateContent"
+	antigravityBaseURLDaily          = "https://daily-cloudcode-pa.googleapis.com"
+	antigravitySandboxBaseURLDaily   = "https://daily-cloudcode-pa.sandbox.googleapis.com"
+	antigravityBaseURLProd           = "https://cloudcode-pa.googleapis.com"
+	antigravityCountTokensPath       = "/v1internal:countTokens"
+	antigravityStreamPath            = "/v1internal:streamGenerateContent"
+	antigravityGeneratePath          = "/v1internal:generateContent"
 	antigravityClaudeMaxOutputTokens = 32000
-	antigravityClientID            = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
-	antigravityClientSecret        = "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"
-	defaultAntigravityAgent        = "antigravity/1.21.9 darwin/arm64" // fallback only; overridden at runtime by misc.AntigravityUserAgent()
-	antigravityAuthType            = "antigravity"
-	refreshSkew                    = 3000 * time.Second
-	antigravityCreditsRetryTTL     = 5 * time.Hour
+	antigravityClientID              = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+	antigravityClientSecret          = "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"
+	defaultAntigravityAgent          = "antigravity/1.21.9 darwin/arm64" // fallback only; overridden at runtime by misc.AntigravityUserAgent()
+	antigravityAuthType              = "antigravity"
+	refreshSkew                      = 3000 * time.Second
+	antigravityCreditsRetryTTL       = 5 * time.Hour
 	// systemInstruction              = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**"
 )
 

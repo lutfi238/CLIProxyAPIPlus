@@ -76,7 +76,7 @@ func TestUseGitHubCopilotResponsesEndpoint_CodexModel(t *testing.T) {
 
 func TestUseGitHubCopilotResponsesEndpoint_RegistryResponsesOnlyModel(t *testing.T) {
 	// Not parallel: shares global model registry with DynamicRegistryWinsOverStatic.
-	if !useGitHubCopilotResponsesEndpoint(sdktranslator.FromString("openai"), "gpt-5.4") {
+	if !useGitHubCopilotResponsesEndpoint(sdktranslator.FromString("openai"), "gpt-5.4-codex") {
 		t.Fatal("expected responses-only registry model to use /responses")
 	}
 	if !useGitHubCopilotResponsesEndpoint(sdktranslator.FromString("openai"), "gpt-5.4-mini") {
@@ -91,7 +91,7 @@ func TestUseGitHubCopilotResponsesEndpoint_DynamicRegistryWinsOverStatic(t *test
 	clientID := "github-copilot-test-client"
 	reg.RegisterClient(clientID, "github-copilot", []*registry.ModelInfo{
 		{
-			ID:                 "gpt-5.4",
+			ID:                 "gpt-5.4-codex",
 			SupportedEndpoints: []string{"/chat/completions", "/responses"},
 		},
 		{
@@ -101,7 +101,7 @@ func TestUseGitHubCopilotResponsesEndpoint_DynamicRegistryWinsOverStatic(t *test
 	})
 	defer reg.UnregisterClient(clientID)
 
-	if useGitHubCopilotResponsesEndpoint(sdktranslator.FromString("openai"), "gpt-5.4") {
+	if useGitHubCopilotResponsesEndpoint(sdktranslator.FromString("openai"), "gpt-5.4-codex") {
 		t.Fatal("expected dynamic registry definition to take precedence over static fallback")
 	}
 
